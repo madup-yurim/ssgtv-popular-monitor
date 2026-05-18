@@ -61,9 +61,9 @@ def crawl_category(page: Page, category: dict) -> tuple[str, list[dict]]:
     products_p2: list[dict] = page.evaluate(_JS_EXTRACT)
 
     # 페이지 2 rank는 p1 마지막 rank 이후로 오프셋
-    offset = len(products_p1)
+    p1_count = len(products_p1)
     for p in products_p2:
-        p["rank"] = p["rank"] + offset
+        p["rank"] = p["rank"] + p1_count
 
     all_products = products_p1 + products_p2
     for p in all_products:
@@ -82,17 +82,18 @@ def crawl_all() -> int:
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.set_viewport_size({"width": 1280, "height": 900})
+        try:
+            page = browser.new_page()
+            page.set_viewport_size({"width": 1280, "height": 900})
 
-        for cat in CATEGORIES:
-            try:
-                _, products = crawl_category(page, cat)
-                save_products(session_id, products)
-            except Exception as e:
-                print(f"  [{cat['id']}] 수집 실패: {e}")
-
-        browser.close()
+            for cat in CATEGORIES:
+                try:
+                    _, products = crawl_category(page, cat)
+                    save_products(session_id, products)
+                except Exception as e:
+                    print(f"  [{cat['id']}] 수집 실패: {e}")
+        finally:
+            browser.close()
 
     print(f"수집 완료 - session_id={session_id}, collected_at={collected_at}")
     return session_id
