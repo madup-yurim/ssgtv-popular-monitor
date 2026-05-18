@@ -1,3 +1,5 @@
+import threading
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -19,7 +21,9 @@ with st.sidebar:
 
     if st.button("📥 지금 수집", use_container_width=True, type="primary"):
         with st.spinner("수집 중... (1~2분 소요)"):
-            crawl_all()
+            t = threading.Thread(target=crawl_all)
+            t.start()
+            t.join()
         st.success("수집 완료!")
         st.rerun()
 
