@@ -1,162 +1,161 @@
-import threading
+import subprocess
+import sys
+from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
-from crawler import crawl_all
-from database import get_products, get_sessions, init_db
+HERE = Path(__file__).parent
 
 st.set_page_config(
     page_title="신세계쇼핑 인기상품 모니터링",
-    page_icon="🛒",
     layout="wide",
+    page_icon="🛒",
 )
 
-init_db()
+st.title("🛒 신세계쇼핑 인기상품 모니터링")
 
-# ── 사이드바 ──────────────────────────────────────────────
-with st.sidebar:
-    st.title("🛒 인기상품 모니터링")
+# Cloud 여부: Streamlit secrets에 서비스 계정이 있으면 Sheets 직접 읽기
+IS_CLOUD = "gcp_service_account" in st.secrets
 
-    if st.button("📥 지금 수집", use_container_width=True, type="primary"):
+# ── 데이터 로드 ───────────────────────────────────────────
+if IS_CLOUD:
+    from sheets_reader import load_from_sheets
+
+    with st.spinner("데이터 로딩 중..."):
+        df = load_from_sheets()
+
+    if df.empty:
+        st.info("시트에 데이터가 없습니다.")
+        st.stop()
+
+    collected_at_label = df["collected_at"].iloc[0] if "collected_at" in df.columns else ""
+    st.caption(f"마지막 수집: {collected_at_label}")
+
+else:
+    from database import get_products, get_sessions, init_db
+
+    init_db()
+
+    # ── 수집 / 시트 업데이트 버튼 ────────────────────────────────
+    col_btn1, col_btn2, _ = st.columns([2, 2, 6])
+
+    with col_btn1:
+        collect = st.button("📥 지금 수집", type="primary", use_container_width=True)
+
+    with col_btn2:
+        push_sheets = st.button("📊 시트 업데이트", use_container_width=True)
+
+    if collect:
         with st.spinner("수집 중... (1~2분 소요)"):
-            t = threading.Thread(target=crawl_all)
-            t.start()
-            t.join()
-        st.success("수집 완료!")
+            result = subprocess.run(
+                [sys.executable, str(HERE / "crawler.py")],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=str(HERE),
+            )
+        if result.returncode == 0:
+            st.success("수집 완료!")
+            st.text(result.stdout[-500:] if result.stdout else "")
+        else:
+            st.error("수집 실패")
+            st.text(result.stderr[-800:] if result.stderr else "")
         st.rerun()
 
+    if push_sheets:
+        sa = HERE / "service_account.json"
+        if not sa.exists():
+            st.error("service_account.json 이 없습니다. README_SHEETS_SETUP.md 참고해주세요.")
+        else:
+            with st.spinner("시트 업데이트 중..."):
+                result = subprocess.run(
+                    [sys.executable, str(HERE / "sheets_writer.py")],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    cwd=str(HERE),
+                )
+            if result.returncode == 0:
+                st.success("시트 업데이트 완료!")
+            else:
+                st.error("시트 업데이트 실패")
+                st.text(result.stderr[-800:])
+
+    st.divider()
+
+    # ── 세션 선택 ─────────────────────────────────────────────
     sessions = get_sessions()
-    if not sessions:
+    real_sessions = [s for s in sessions if len(get_products(s["id"])) >= 50]
+
+    if not real_sessions:
         st.info("수집 데이터가 없습니다. 위 버튼으로 수집해주세요.")
         st.stop()
 
-    session_labels = {s["id"]: s["collected_at"].replace("T", " ") for s in sessions}
+    session_labels = {s["id"]: s["collected_at"].replace("T", " ") for s in real_sessions}
     selected_id = st.selectbox(
-        "수집 회차 선택",
+        "수집 회차",
         options=list(session_labels.keys()),
         format_func=lambda x: session_labels[x],
+        label_visibility="collapsed",
     )
 
-    all_products = get_products(selected_id)
-    df_all = pd.DataFrame(all_products)
+    products = get_products(selected_id)
+    df = pd.DataFrame(products)
+    collected_at_label = session_labels[selected_id]
 
-    categories = sorted(df_all["category_name"].unique().tolist())
-    selected_cats = st.multiselect("카테고리 필터", categories, default=categories)
+st.divider()
 
-    if not selected_cats:
-        st.warning("카테고리를 최소 1개 이상 선택해주세요.")
-        st.stop()
+# ── 카테고리 필터 ──────────────────────────────────────────
+categories = sorted(df["category_name"].unique().tolist())
+selected_cats = st.multiselect(
+    "카테고리 필터",
+    options=categories,
+    default=categories,
+)
 
-df = df_all[df_all["category_name"].isin(selected_cats)].copy()
+if not selected_cats:
+    st.warning("카테고리를 1개 이상 선택해주세요.")
+    st.stop()
+
+df = df[df["category_name"].isin(selected_cats)].copy()
 
 # ── 요약 지표 ─────────────────────────────────────────────
-st.subheader("요약")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("총 상품수", f"{len(df):,}개")
-avg_price = df[df['price'] > 0]['price'].mean()
-c2.metric("평균 판매가", f"{int(avg_price):,}원" if pd.notna(avg_price) else "—")
-c3.metric("평균 평점", f"{df['rating'].mean():.2f}" if len(df) else "—")
-c4.metric("평균 리뷰수", f"{int(df['review_count'].mean()):,}건" if len(df) else "—")
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric("총 상품수", f"{len(df):,}개")
+m2.metric("카테고리", f"{df['category_name'].nunique()}개")
+avg_price = df[df["price"] > 0]["price"].mean()
+m3.metric("평균 판매가", f"{int(avg_price):,}원" if pd.notna(avg_price) else "—")
+m4.metric("평균 평점", f"{df[df['rating']>0]['rating'].mean():.2f}" if df["rating"].any() else "—")
+m5.metric("평균 리뷰수", f"{int(df[df['review_count']>0]['review_count'].mean()):,}건" if df["review_count"].any() else "—")
 
 st.divider()
 
-# ── 차트 ─────────────────────────────────────────────────
-if len(df) == 0:
-    st.info("선택된 카테고리에 데이터가 없습니다.")
-else:
-    st.subheader("분석")
-    col1, col2 = st.columns(2)
+# ── 테이블 ────────────────────────────────────────────────
+display = df[[
+    "rank", "category_name", "image_url", "product_name", "brand",
+    "category_path", "price", "badge", "rating", "review_count",
+    "card_benefit", "shipping", "product_url",
+]].copy()
 
-    with col1:
-        brand_counts = (
-            df["brand"]
-            .value_counts()
-            .head(15)
-            .reset_index()
-        )
-        brand_counts.columns = ["브랜드", "상품수"]
-        fig_brand = px.bar(
-            brand_counts,
-            x="상품수",
-            y="브랜드",
-            orientation="h",
-            title="브랜드별 인기상품 수 (Top 15)",
-            color="상품수",
-            color_continuous_scale="Blues",
-        )
-        fig_brand.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False)
-        st.plotly_chart(fig_brand, use_container_width=True)
+display.columns = [
+    "순위", "카테고리", "이미지", "상품명", "브랜드",
+    "카테고리경로", "판매가(원)", "배지", "평점", "리뷰수",
+    "카드혜택", "배송", "상품URL",
+]
 
-    with col2:
-        badge_counts = df["badge"].replace("", "없음").value_counts().reset_index()
-        badge_counts.columns = ["배지", "상품수"]
-        fig_badge = px.pie(
-            badge_counts,
-            names="배지",
-            values="상품수",
-            title="배지 분포",
-            hole=0.4,
-        )
-        st.plotly_chart(fig_badge, use_container_width=True)
+display = display.sort_values(["카테고리", "순위"]).reset_index(drop=True)
 
-    col3, col4 = st.columns(2)
+st.dataframe(
+    display,
+    use_container_width=True,
+    height=700,
+    column_config={
+        "이미지": st.column_config.ImageColumn("이미지", width="small"),
+        "상품명": st.column_config.TextColumn("상품명", width="large"),
+        "상품URL": st.column_config.LinkColumn("링크", display_text="보기"),
+        "판매가(원)": st.column_config.NumberColumn("판매가(원)", format="%d"),
+        "리뷰수": st.column_config.NumberColumn("리뷰수", format="%d"),
+        "평점": st.column_config.NumberColumn("평점", format="%.1f"),
+        "순위": st.column_config.NumberColumn("순위", width="small"),
+    },
+    hide_index=True,
+)
 
-    with col3:
-        fig_price = px.histogram(
-            df[df["price"] > 0],
-            x="price",
-            nbins=30,
-            title="가격 분포",
-            labels={"price": "판매가 (원)"},
-            color_discrete_sequence=["#636EFA"],
-        )
-        st.plotly_chart(fig_price, use_container_width=True)
-
-    with col4:
-        fig_rating = px.histogram(
-            df[df["rating"] > 0],
-            x="rating",
-            nbins=20,
-            title="평점 분포",
-            labels={"rating": "평점"},
-            color_discrete_sequence=["#EF553B"],
-        )
-        st.plotly_chart(fig_rating, use_container_width=True)
-
-st.divider()
-
-# ── 상품 목록 ─────────────────────────────────────────────
-st.subheader("상품 목록")
-
-tabs = st.tabs(selected_cats + ["전체"])
-
-for i, cat in enumerate(selected_cats + ["전체"]):
-    with tabs[i]:
-        subset = df if cat == "전체" else df[df["category_name"] == cat]
-        subset = subset.sort_values("rank").reset_index(drop=True)
-
-        display_df = subset[[
-            "rank", "image_url", "product_name", "brand",
-            "category_path", "price", "badge", "rating",
-            "review_count", "card_benefit", "shipping", "product_url"
-        ]].copy()
-        display_df.columns = [
-            "순위", "이미지", "상품명", "브랜드",
-            "카테고리", "판매가(원)", "배지", "평점",
-            "리뷰수", "카드혜택", "배송", "상품URL"
-        ]
-
-        st.dataframe(
-            display_df,
-            column_config={
-                "이미지": st.column_config.ImageColumn("이미지", width="small"),
-                "상품명": st.column_config.TextColumn("상품명", width="large"),
-                "상품URL": st.column_config.LinkColumn("상품URL"),
-                "판매가(원)": st.column_config.NumberColumn("판매가(원)", format="%d"),
-                "리뷰수": st.column_config.NumberColumn("리뷰수", format="%d"),
-            },
-            use_container_width=True,
-            height=600,
-        )
+st.caption(f"수집 시각: {collected_at_label}  |  총 {len(df):,}개 상품")

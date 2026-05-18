@@ -1,3 +1,6 @@
+service_account.json
+ssgtv-best-monitor-*.json
+token.json
 __pycache__/
 *.py[cod]
 *$py.class

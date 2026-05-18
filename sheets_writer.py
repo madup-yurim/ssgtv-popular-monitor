@@ -41,7 +41,7 @@ def _get_or_create_sheet(spreadsheet: gspread.Spreadsheet, tab_name: str) -> gsp
 def write_to_sheets(session_id: int | None = None, tab_name: str | None = None) -> dict:
     """
     session_id: None이면 최신 세션 사용
-    tab_name: None이면 수집일자(YYYY-MM-DD) 탭 사용
+    tab_name: None이면 첫 번째 탭에 덮어씀
     반환: {"sheet_url": str, "rows_written": int, "tab": str}
     """
     if not SERVICE_ACCOUNT_PATH.exists():
@@ -53,7 +53,7 @@ def write_to_sheets(session_id: int | None = None, tab_name: str | None = None) 
     # 최신 세션 자동 선택
     if session_id is None:
         sessions = get_sessions()
-        real = [s for s in sessions if get_products(s["id"])]
+        real = [s for s in sessions if len(get_products(s["id"])) >= 50]
         if not real:
             raise ValueError("수집된 데이터가 없습니다. 먼저 크롤러를 실행하세요.")
         session_id = real[0]["id"]
@@ -65,12 +65,15 @@ def write_to_sheets(session_id: int | None = None, tab_name: str | None = None) 
     collected_at = next(
         s["collected_at"] for s in get_sessions() if s["id"] == session_id
     )
-    if tab_name is None:
-        tab_name = collected_at[:10]  # YYYY-MM-DD
 
     gc = gspread.service_account(filename=str(SERVICE_ACCOUNT_PATH))
     spreadsheet = gc.open_by_key(SPREADSHEET_ID)
-    ws = _get_or_create_sheet(spreadsheet, tab_name)
+
+    # tab_name 지정 시 해당 탭, 없으면 첫 번째 탭 사용
+    if tab_name:
+        ws = _get_or_create_sheet(spreadsheet, tab_name)
+    else:
+        ws = spreadsheet.get_worksheet(0)
 
     # 기존 데이터 지우고 헤더 다시 쓰기
     ws.clear()
@@ -100,8 +103,8 @@ def write_to_sheets(session_id: int | None = None, tab_name: str | None = None) 
     ws.append_rows(rows, value_input_option="RAW")
 
     sheet_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit#gid={ws.id}"
-    print(f"✅ {len(rows)}행 → {tab_name} 탭 업데이트 완료")
-    print(f"📊 {sheet_url}")
+    print(f"OK: {len(rows)}rows -> tab={tab_name}")
+    print(f"URL: {sheet_url}")
     return {"sheet_url": sheet_url, "rows_written": len(rows), "tab": tab_name}
 
 

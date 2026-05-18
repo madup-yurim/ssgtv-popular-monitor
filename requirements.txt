@@ -1,4 +1,6 @@
 streamlit>=1.34.0
-playwright>=1.44.0
 pandas>=2.0.0
-plotly>=5.22.0
+gspread>=6.0.0
+google-auth>=2.0.0
+# 로컬 크롤러용 (Streamlit Cloud에서는 사용 안 함)
+playwright>=1.44.0
