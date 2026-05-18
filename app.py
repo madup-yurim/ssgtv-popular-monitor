@@ -41,77 +41,85 @@ with st.sidebar:
     categories = sorted(df_all["category_name"].unique().tolist())
     selected_cats = st.multiselect("카테고리 필터", categories, default=categories)
 
+    if not selected_cats:
+        st.warning("카테고리를 최소 1개 이상 선택해주세요.")
+        st.stop()
+
 df = df_all[df_all["category_name"].isin(selected_cats)].copy()
 
 # ── 요약 지표 ─────────────────────────────────────────────
 st.subheader("요약")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("총 상품수", f"{len(df):,}개")
-c2.metric("평균 판매가", f"{int(df['price'].mean()):,}원" if len(df) else "—")
+avg_price = df[df['price'] > 0]['price'].mean()
+c2.metric("평균 판매가", f"{int(avg_price):,}원" if pd.notna(avg_price) else "—")
 c3.metric("평균 평점", f"{df['rating'].mean():.2f}" if len(df) else "—")
 c4.metric("평균 리뷰수", f"{int(df['review_count'].mean()):,}건" if len(df) else "—")
 
 st.divider()
 
 # ── 차트 ─────────────────────────────────────────────────
-st.subheader("분석")
-col1, col2 = st.columns(2)
+if len(df) == 0:
+    st.info("선택된 카테고리에 데이터가 없습니다.")
+else:
+    st.subheader("분석")
+    col1, col2 = st.columns(2)
 
-with col1:
-    brand_counts = (
-        df["brand"]
-        .value_counts()
-        .head(15)
-        .reset_index()
-    )
-    brand_counts.columns = ["브랜드", "상품수"]
-    fig_brand = px.bar(
-        brand_counts,
-        x="상품수",
-        y="브랜드",
-        orientation="h",
-        title="브랜드별 인기상품 수 (Top 15)",
-        color="상품수",
-        color_continuous_scale="Blues",
-    )
-    fig_brand.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False)
-    st.plotly_chart(fig_brand, use_container_width=True)
+    with col1:
+        brand_counts = (
+            df["brand"]
+            .value_counts()
+            .head(15)
+            .reset_index()
+        )
+        brand_counts.columns = ["브랜드", "상품수"]
+        fig_brand = px.bar(
+            brand_counts,
+            x="상품수",
+            y="브랜드",
+            orientation="h",
+            title="브랜드별 인기상품 수 (Top 15)",
+            color="상품수",
+            color_continuous_scale="Blues",
+        )
+        fig_brand.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False)
+        st.plotly_chart(fig_brand, use_container_width=True)
 
-with col2:
-    badge_counts = df["badge"].replace("", "없음").value_counts().reset_index()
-    badge_counts.columns = ["배지", "상품수"]
-    fig_badge = px.pie(
-        badge_counts,
-        names="배지",
-        values="상품수",
-        title="배지 분포",
-        hole=0.4,
-    )
-    st.plotly_chart(fig_badge, use_container_width=True)
+    with col2:
+        badge_counts = df["badge"].replace("", "없음").value_counts().reset_index()
+        badge_counts.columns = ["배지", "상품수"]
+        fig_badge = px.pie(
+            badge_counts,
+            names="배지",
+            values="상품수",
+            title="배지 분포",
+            hole=0.4,
+        )
+        st.plotly_chart(fig_badge, use_container_width=True)
 
-col3, col4 = st.columns(2)
+    col3, col4 = st.columns(2)
 
-with col3:
-    fig_price = px.histogram(
-        df[df["price"] > 0],
-        x="price",
-        nbins=30,
-        title="가격 분포",
-        labels={"price": "판매가 (원)"},
-        color_discrete_sequence=["#636EFA"],
-    )
-    st.plotly_chart(fig_price, use_container_width=True)
+    with col3:
+        fig_price = px.histogram(
+            df[df["price"] > 0],
+            x="price",
+            nbins=30,
+            title="가격 분포",
+            labels={"price": "판매가 (원)"},
+            color_discrete_sequence=["#636EFA"],
+        )
+        st.plotly_chart(fig_price, use_container_width=True)
 
-with col4:
-    fig_rating = px.histogram(
-        df[df["rating"] > 0],
-        x="rating",
-        nbins=20,
-        title="평점 분포",
-        labels={"rating": "평점"},
-        color_discrete_sequence=["#EF553B"],
-    )
-    st.plotly_chart(fig_rating, use_container_width=True)
+    with col4:
+        fig_rating = px.histogram(
+            df[df["rating"] > 0],
+            x="rating",
+            nbins=20,
+            title="평점 분포",
+            labels={"rating": "평점"},
+            color_discrete_sequence=["#EF553B"],
+        )
+        st.plotly_chart(fig_rating, use_container_width=True)
 
 st.divider()
 
