@@ -20,18 +20,28 @@ IS_CLOUD = "gcp_service_account" in st.secrets
 
 # ── 데이터 로드 및 세션 선택 ──────────────────────────────
 if IS_CLOUD:
+    from datetime import datetime
+
     from sheets_reader import get_sessions_from_sheets, load_all_from_sheets
 
-    # refresh_count가 바뀌면 캐시 키가 달라져 강제 재fetch
     if "refresh_count" not in st.session_state:
         st.session_state.refresh_count = 0
+    if "last_refreshed" not in st.session_state:
+        st.session_state.last_refreshed = None
 
-    col_btn, _ = st.columns([2, 8])
+    col_btn, col_info = st.columns([2, 8])
     with col_btn:
         if st.button("🔄 새로고침", use_container_width=True):
             st.session_state.refresh_count += 1
+            st.session_state.last_refreshed = datetime.now().strftime("%H:%M:%S")
 
-    with st.spinner("데이터 로딩 중..."):
+    with col_info:
+        if st.session_state.last_refreshed:
+            st.caption(f"✅ {st.session_state.last_refreshed} 에 시트에서 새로 불러왔습니다")
+        else:
+            st.caption("ℹ️ 시트 데이터를 표시 중입니다. 새 수집은 로컬에서 '수집하기' 후 자동 반영됩니다.")
+
+    with st.spinner("시트에서 데이터 불러오는 중..."):
         all_df = load_all_from_sheets(refresh_count=st.session_state.refresh_count)
 
     if all_df.empty:
