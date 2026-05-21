@@ -13,7 +13,6 @@ libxrandr2
 libgbm1
 libpangocairo-1.0-0
 libcairo2
-libglib2.0-0
 libx11-6
 libxcb1
 libxext6
