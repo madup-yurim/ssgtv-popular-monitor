@@ -6,6 +6,7 @@ SQLite 세션 데이터를 지정 스프레드시트에 누적 기록한다.
 """
 
 import json
+import os
 from pathlib import Path
 
 import gspread
@@ -14,6 +15,25 @@ from database import get_products, get_sessions
 
 SPREADSHEET_ID = "1NR55kj6kwK1vSG3J-3T_IROYibAgv5WUqw46adh3sKU"
 SERVICE_ACCOUNT_PATH = Path(__file__).parent / "service_account.json"
+
+
+def _client() -> gspread.Client:
+    """st.secrets 또는 service_account.json 파일로 gspread 클라이언트 반환."""
+    # Streamlit Cloud: secrets 환경변수 경유
+    try:
+        import streamlit as st
+        if "gcp_service_account" in st.secrets:
+            return gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
+    except Exception:
+        pass
+    # 로컬: 파일
+    if SERVICE_ACCOUNT_PATH.exists():
+        return gspread.service_account(filename=str(SERVICE_ACCOUNT_PATH))
+    raise FileNotFoundError(
+        f"서비스 계정 키를 찾을 수 없습니다.\n"
+        f"  - Streamlit Cloud: st.secrets['gcp_service_account'] 를 설정하거나\n"
+        f"  - 로컬: {SERVICE_ACCOUNT_PATH} 파일을 배치하세요."
+    )
 
 COLUMNS = [
     "No", "수집일시", "카테고리", "순위",
@@ -42,12 +62,6 @@ def write_to_sheets(session_id: int | None = None) -> dict:
     이미 시트에 해당 수집일시 데이터가 있으면 스킵한다 (중복 방지).
     반환: {"sheet_url": str, "rows_written": int, "skipped": bool}
     """
-    if not SERVICE_ACCOUNT_PATH.exists():
-        raise FileNotFoundError(
-            f"서비스 계정 키 파일이 없습니다: {SERVICE_ACCOUNT_PATH}\n"
-            "README_SHEETS_SETUP.md 를 참고해 설정해주세요."
-        )
-
     # 최신 세션 자동 선택
     if session_id is None:
         sessions = get_sessions()
@@ -65,7 +79,7 @@ def write_to_sheets(session_id: int | None = None) -> dict:
     )
     collected_str = collected_at.replace("T", " ")
 
-    gc = gspread.service_account(filename=str(SERVICE_ACCOUNT_PATH))
+    gc = _client()
     spreadsheet = gc.open_by_key(SPREADSHEET_ID)
     ws = spreadsheet.get_worksheet(0)
 

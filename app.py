@@ -41,21 +41,18 @@ if collect:
         st.stop()
 
     # 2단계: 시트 자동 업데이트
-    sa = HERE / "service_account.json"
-    if sa.exists():
-        status.info("📊 시트 업데이트 중...")
-        sheets_result = subprocess.run(
-            [sys.executable, str(HERE / "sheets_writer.py")],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(HERE),
-        )
-        if sheets_result.returncode == 0:
-            status.success("✅ 수집 완료! 시트도 업데이트됐습니다.")
-        else:
-            status.warning("⚠️ 수집은 완료됐지만 시트 업데이트 실패")
-            st.text(sheets_result.stderr[-400:])
+    status.info("📊 시트 업데이트 중...")
+    sheets_result = subprocess.run(
+        [sys.executable, str(HERE / "sheets_writer.py")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        cwd=str(HERE),
+    )
+    if sheets_result.returncode == 0:
+        status.success("✅ 수집 완료! 시트도 업데이트됐습니다.")
     else:
-        status.success("✅ 수집 완료!")
+        status.warning("⚠️ 수집은 완료됐지만 시트 업데이트 실패")
+        with st.expander("시트 업데이트 오류", expanded=False):
+            st.code(sheets_result.stderr[-800:] if sheets_result.stderr else sheets_result.stdout[-800:])
 
     # 3단계: Sheets 캐시 초기화 후 재로딩
     if IS_CLOUD:
