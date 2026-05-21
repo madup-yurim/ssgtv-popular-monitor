@@ -33,9 +33,10 @@ def _client() -> gspread.Client:
     return gspread.service_account(filename=str(sa))
 
 
-@st.cache_data(ttl=60)
-def load_all_from_sheets() -> pd.DataFrame:
-    """시트 전체 데이터를 읽어 DataFrame으로 반환."""
+@st.cache_data(ttl=300)
+def load_all_from_sheets(refresh_count: int = 0) -> pd.DataFrame:
+    """시트 전체 데이터를 읽어 DataFrame으로 반환.
+    refresh_count가 바뀌면 캐시를 무시하고 새로 fetch한다."""
     gc = _client()
     ws = gc.open_by_key(SPREADSHEET_ID).get_worksheet(0)
     records = ws.get_all_records()

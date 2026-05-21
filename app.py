@@ -22,15 +22,17 @@ IS_CLOUD = "gcp_service_account" in st.secrets
 if IS_CLOUD:
     from sheets_reader import get_sessions_from_sheets, load_all_from_sheets
 
-    # 수집 버튼 (Cloud: Sheets 캐시 갱신만)
+    # refresh_count가 바뀌면 캐시 키가 달라져 강제 재fetch
+    if "refresh_count" not in st.session_state:
+        st.session_state.refresh_count = 0
+
     col_btn, _ = st.columns([2, 8])
     with col_btn:
         if st.button("🔄 새로고침", use_container_width=True):
-            load_all_from_sheets.clear()
-            st.rerun()
+            st.session_state.refresh_count += 1
 
     with st.spinner("데이터 로딩 중..."):
-        all_df = load_all_from_sheets()
+        all_df = load_all_from_sheets(refresh_count=st.session_state.refresh_count)
 
     if all_df.empty:
         st.info("시트에 데이터가 없습니다.")
