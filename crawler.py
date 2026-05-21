@@ -1,6 +1,8 @@
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, Page
@@ -104,7 +106,7 @@ def crawl_all() -> int:
     """4개 카테고리 전체 수집 → DB 저장 → session_id 반환"""
     _ensure_browser()
     init_db()
-    collected_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    collected_at = datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S")
     session_id = create_session(collected_at)
 
     with sync_playwright() as pw:
