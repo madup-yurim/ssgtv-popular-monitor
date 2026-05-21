@@ -9,15 +9,22 @@ from database import init_db, create_session, save_products
 
 
 def _ensure_browser() -> None:
-    """Playwright Chromium 바이너리 보장 (없으면 설치, 있으면 즉시 종료)."""
+    """Playwright Chromium 바이너리 + 시스템 의존성 보장."""
+    # --with-deps: 시스템 패키지까지 함께 설치 (이미 있으면 빠르게 종료)
     result = subprocess.run(
-        [sys.executable, "-m", "playwright", "install", "chromium"],
+        [sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
-        print(result.stdout, flush=True)
-        print(result.stderr, flush=True)
-        raise RuntimeError(f"Playwright 브라우저 설치 실패:\n{result.stderr}")
+        # sudo 없는 환경이면 바이너리만 설치 시도
+        result2 = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True, text=True,
+        )
+        if result2.returncode != 0:
+            print(result2.stdout, flush=True)
+            print(result2.stderr, flush=True)
+            raise RuntimeError(f"Playwright 설치 실패:\n{result2.stderr}")
 
 CATEGORIES = [
     {"id": "30100020", "url": "https://www.shinsegaetvshopping.com/category/30100020?trackSearchType=y_pc_category&new_odd=y"},
