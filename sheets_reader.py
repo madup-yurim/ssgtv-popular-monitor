@@ -1,4 +1,4 @@
-"""Google Sheets에서 데이터를 읽어 DataFrame으로 반환한다."""
+"""Google Sheets에서 누적 데이터를 읽어 DataFrame으로 반환한다."""
 
 from pathlib import Path
 
@@ -33,8 +33,9 @@ def _client() -> gspread.Client:
     return gspread.service_account(filename=str(sa))
 
 
-@st.cache_data(ttl=300)
-def load_from_sheets() -> pd.DataFrame:
+@st.cache_data(ttl=60)
+def load_all_from_sheets() -> pd.DataFrame:
+    """시트 전체 데이터를 읽어 DataFrame으로 반환."""
     gc = _client()
     ws = gc.open_by_key(SPREADSHEET_ID).get_worksheet(0)
     records = ws.get_all_records()
@@ -47,3 +48,10 @@ def load_from_sheets() -> pd.DataFrame:
     if "rating" in df.columns:
         df["rating"] = pd.to_numeric(df["rating"], errors="coerce").fillna(0.0)
     return df
+
+
+def get_sessions_from_sheets(df: pd.DataFrame) -> list[str]:
+    """수집일시 목록을 최신순으로 반환."""
+    if "collected_at" not in df.columns:
+        return []
+    return sorted(df["collected_at"].unique().tolist(), reverse=True)

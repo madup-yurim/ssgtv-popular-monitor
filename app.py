@@ -18,65 +18,80 @@ st.title("🛒 신세계쇼핑 인기상품 모니터링")
 # Cloud 여부: Streamlit secrets에 서비스 계정이 있으면 Sheets 직접 읽기
 IS_CLOUD = "gcp_service_account" in st.secrets
 
-# ── 데이터 로드 ───────────────────────────────────────────
+# ── 데이터 로드 및 세션 선택 ──────────────────────────────
 if IS_CLOUD:
-    from sheets_reader import load_from_sheets
+    from sheets_reader import get_sessions_from_sheets, load_all_from_sheets
+
+    # 수집 버튼 (Cloud: Sheets 캐시 갱신만)
+    col_btn, _ = st.columns([2, 8])
+    with col_btn:
+        if st.button("🔄 새로고침", use_container_width=True):
+            load_all_from_sheets.clear()
+            st.rerun()
 
     with st.spinner("데이터 로딩 중..."):
-        df = load_from_sheets()
+        all_df = load_all_from_sheets()
 
-    if df.empty:
+    if all_df.empty:
         st.info("시트에 데이터가 없습니다.")
         st.stop()
 
-    collected_at_label = df["collected_at"].iloc[0] if "collected_at" in df.columns else ""
-    st.caption(f"마지막 수집: {collected_at_label}")
+    sessions = get_sessions_from_sheets(all_df)
+    if not sessions:
+        st.info("수집 데이터가 없습니다.")
+        st.stop()
+
+    selected_session = st.selectbox(
+        "수집 회차",
+        options=sessions,
+        label_visibility="collapsed",
+    )
+
+    df = all_df[all_df["collected_at"] == selected_session].copy()
+    collected_at_label = selected_session
 
 else:
+    # ── 로컬: 수집 버튼 (크롤링 + 시트 자동 업데이트) ────────────
     from database import get_products, get_sessions, init_db
 
     init_db()
 
-    # ── 수집 / 시트 업데이트 버튼 ────────────────────────────────
-    col_btn1, col_btn2, _ = st.columns([2, 2, 6])
-
-    with col_btn1:
-        collect = st.button("📥 지금 수집", type="primary", use_container_width=True)
-
-    with col_btn2:
-        push_sheets = st.button("📊 시트 업데이트", use_container_width=True)
+    col_btn, _ = st.columns([3, 7])
+    with col_btn:
+        collect = st.button("📥 수집하기", type="primary", use_container_width=True)
 
     if collect:
+        # 1단계: 크롤링
         with st.spinner("수집 중... (1~2분 소요)"):
             result = subprocess.run(
                 [sys.executable, str(HERE / "crawler.py")],
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
                 cwd=str(HERE),
             )
-        if result.returncode == 0:
-            st.success("수집 완료!")
-            st.text(result.stdout[-500:] if result.stdout else "")
-        else:
+
+        if result.returncode != 0:
             st.error("수집 실패")
             st.text(result.stderr[-800:] if result.stderr else "")
-        st.rerun()
+            st.stop()
 
-    if push_sheets:
+        st.success("✅ 수집 완료!")
+
+        # 2단계: 시트 자동 업데이트
         sa = HERE / "service_account.json"
-        if not sa.exists():
-            st.error("service_account.json 이 없습니다. README_SHEETS_SETUP.md 참고해주세요.")
-        else:
+        if sa.exists():
             with st.spinner("시트 업데이트 중..."):
-                result = subprocess.run(
+                sheets_result = subprocess.run(
                     [sys.executable, str(HERE / "sheets_writer.py")],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                     cwd=str(HERE),
                 )
-            if result.returncode == 0:
-                st.success("시트 업데이트 완료!")
+            if sheets_result.returncode == 0:
+                st.success("📊 시트 업데이트 완료!")
             else:
-                st.error("시트 업데이트 실패")
-                st.text(result.stderr[-800:])
+                st.warning("시트 업데이트 실패 (대시보드는 정상)")
+                st.text(sheets_result.stderr[-500:])
+
+        st.rerun()
 
     st.divider()
 
