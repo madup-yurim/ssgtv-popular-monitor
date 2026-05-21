@@ -15,99 +15,84 @@ st.set_page_config(
 
 st.title("🛒 신세계쇼핑 인기상품 모니터링")
 
-# Cloud 여부: Streamlit secrets에 서비스 계정이 있으면 Sheets 직접 읽기
 IS_CLOUD = "gcp_service_account" in st.secrets
 
-# ── 데이터 로드 및 세션 선택 ──────────────────────────────
-if IS_CLOUD:
-    from datetime import datetime
+# ── 수집 버튼 (항상 표시) ──────────────────────────────────
+col_btn, col_status = st.columns([2, 8])
 
+with col_btn:
+    collect = st.button("📥 수집하기", type="primary", use_container_width=True)
+
+if collect:
+    # 1단계: 크롤링
+    status = col_status.empty()
+    status.info("🕷️ 크롤링 중... (1~2분 소요)")
+
+    result = subprocess.run(
+        [sys.executable, str(HERE / "crawler.py")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        cwd=str(HERE),
+    )
+
+    if result.returncode != 0:
+        status.error("크롤링 실패")
+        st.text(result.stderr[-800:] if result.stderr else "")
+        st.stop()
+
+    # 2단계: 시트 자동 업데이트
+    sa = HERE / "service_account.json"
+    if sa.exists():
+        status.info("📊 시트 업데이트 중...")
+        sheets_result = subprocess.run(
+            [sys.executable, str(HERE / "sheets_writer.py")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(HERE),
+        )
+        if sheets_result.returncode == 0:
+            status.success("✅ 수집 완료! 시트도 업데이트됐습니다.")
+        else:
+            status.warning("⚠️ 수집은 완료됐지만 시트 업데이트 실패")
+            st.text(sheets_result.stderr[-400:])
+    else:
+        status.success("✅ 수집 완료!")
+
+    # 3단계: Sheets 캐시 초기화 후 재로딩
+    if IS_CLOUD:
+        if "refresh_count" not in st.session_state:
+            st.session_state.refresh_count = 0
+        st.session_state.refresh_count += 1
+
+    st.rerun()
+
+st.divider()
+
+# ── 데이터 로드 + 세션 선택 ──────────────────────────────
+if IS_CLOUD:
     from sheets_reader import get_sessions_from_sheets, load_all_from_sheets
 
     if "refresh_count" not in st.session_state:
         st.session_state.refresh_count = 0
-    if "last_refreshed" not in st.session_state:
-        st.session_state.last_refreshed = None
 
-    col_btn, col_info = st.columns([2, 8])
-    with col_btn:
-        if st.button("🔄 새로고침", use_container_width=True):
-            st.session_state.refresh_count += 1
-            st.session_state.last_refreshed = datetime.now().strftime("%H:%M:%S")
-
-    with col_info:
-        if st.session_state.last_refreshed:
-            st.caption(f"✅ {st.session_state.last_refreshed} 에 시트에서 새로 불러왔습니다")
-        else:
-            st.caption("ℹ️ 시트 데이터를 표시 중입니다. 새 수집은 로컬에서 '수집하기' 후 자동 반영됩니다.")
-
-    with st.spinner("시트에서 데이터 불러오는 중..."):
+    with st.spinner("데이터 로딩 중..."):
         all_df = load_all_from_sheets(refresh_count=st.session_state.refresh_count)
 
     if all_df.empty:
-        st.info("시트에 데이터가 없습니다.")
+        st.info("수집 데이터가 없습니다. 위 버튼으로 수집해주세요.")
         st.stop()
 
     sessions = get_sessions_from_sheets(all_df)
-    if not sessions:
-        st.info("수집 데이터가 없습니다.")
-        st.stop()
-
     selected_session = st.selectbox(
         "수집 회차",
         options=sessions,
         label_visibility="collapsed",
     )
-
     df = all_df[all_df["collected_at"] == selected_session].copy()
     collected_at_label = selected_session
 
 else:
-    # ── 로컬: 수집 버튼 (크롤링 + 시트 자동 업데이트) ────────────
     from database import get_products, get_sessions, init_db
 
     init_db()
-
-    col_btn, _ = st.columns([3, 7])
-    with col_btn:
-        collect = st.button("📥 수집하기", type="primary", use_container_width=True)
-
-    if collect:
-        # 1단계: 크롤링
-        with st.spinner("수집 중... (1~2분 소요)"):
-            result = subprocess.run(
-                [sys.executable, str(HERE / "crawler.py")],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                cwd=str(HERE),
-            )
-
-        if result.returncode != 0:
-            st.error("수집 실패")
-            st.text(result.stderr[-800:] if result.stderr else "")
-            st.stop()
-
-        st.success("✅ 수집 완료!")
-
-        # 2단계: 시트 자동 업데이트
-        sa = HERE / "service_account.json"
-        if sa.exists():
-            with st.spinner("시트 업데이트 중..."):
-                sheets_result = subprocess.run(
-                    [sys.executable, str(HERE / "sheets_writer.py")],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace",
-                    cwd=str(HERE),
-                )
-            if sheets_result.returncode == 0:
-                st.success("📊 시트 업데이트 완료!")
-            else:
-                st.warning("시트 업데이트 실패 (대시보드는 정상)")
-                st.text(sheets_result.stderr[-500:])
-
-        st.rerun()
-
-    st.divider()
-
-    # ── 세션 선택 ─────────────────────────────────────────────
     sessions = get_sessions()
     real_sessions = [s for s in sessions if len(get_products(s["id"])) >= 50]
 
@@ -122,9 +107,7 @@ else:
         format_func=lambda x: session_labels[x],
         label_visibility="collapsed",
     )
-
-    products = get_products(selected_id)
-    df = pd.DataFrame(products)
+    df = pd.DataFrame(get_products(selected_id))
     collected_at_label = session_labels[selected_id]
 
 st.divider()
