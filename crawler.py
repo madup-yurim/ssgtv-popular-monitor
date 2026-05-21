@@ -1,13 +1,14 @@
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
-
-KST = timezone(timedelta(hours=9))
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, Page
 
 from database import init_db, create_session, save_products
+
+KST = timezone(timedelta(hours=9))
 
 
 def _ensure_browser() -> None:
@@ -102,29 +103,37 @@ def crawl_category(page: Page, category: dict) -> tuple[str, list[dict]]:
     return category_name, all_products
 
 
-def crawl_all() -> int:
-    """4개 카테고리 전체 수집 → DB 저장 → session_id 반환"""
-    _ensure_browser()
-    init_db()
-    collected_at = datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S")
-    session_id = create_session(collected_at)
-
+def _crawl_category_worker(cat: dict) -> tuple[str, list[dict]]:
+    """독립 playwright 인스턴스로 카테고리 수집 (스레드 안전)."""
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         try:
             page = browser.new_page()
             page.set_viewport_size({"width": 1280, "height": 900})
-
-            for cat in CATEGORIES:
-                try:
-                    _, products = crawl_category(page, cat)
-                    save_products(session_id, products)
-                except Exception as e:
-                    print(f"  [{cat['id']}] 수집 실패: {e}")
+            return crawl_category(page, cat)
+        except Exception as e:
+            print(f"  [{cat['id']}] 수집 실패: {e}")
+            return cat["id"], []
         finally:
             browser.close()
 
-    print(f"수집 완료 - session_id={session_id}, collected_at={collected_at}")
+
+def crawl_all() -> int:
+    """4개 카테고리 병렬 수집 → DB 저장 → session_id 반환"""
+    _ensure_browser()
+    init_db()
+    collected_at = datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S")
+    session_id = create_session(collected_at)
+
+    all_products: list[dict] = []
+    with ThreadPoolExecutor(max_workers=len(CATEGORIES)) as executor:
+        futures = {executor.submit(_crawl_category_worker, cat): cat for cat in CATEGORIES}
+        for future in as_completed(futures):
+            _, products = future.result()
+            all_products.extend(products)
+
+    save_products(session_id, all_products)
+    print(f"수집 완료 - session_id={session_id}, collected_at={collected_at}, 총 {len(all_products)}개")
     return session_id
 
 
