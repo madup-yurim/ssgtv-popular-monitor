@@ -36,7 +36,8 @@ if collect:
 
     if result.returncode != 0:
         status.error("크롤링 실패")
-        st.text(result.stderr[-800:] if result.stderr else "")
+        with st.expander("에러 상세 보기", expanded=True):
+            st.code(result.stderr[-1500:] if result.stderr else result.stdout[-1500:])
         st.stop()
 
     # 2단계: 시트 자동 업데이트

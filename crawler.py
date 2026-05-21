@@ -9,19 +9,15 @@ from database import init_db, create_session, save_products
 
 
 def _ensure_browser() -> None:
-    """Playwright 브라우저 바이너리가 없으면 자동 설치 (Streamlit Cloud 대응)."""
-    try:
-        from playwright.sync_api import sync_playwright as _sp
-        with _sp() as _pw:
-            exe = Path(_pw.chromium.executable_path)
-        if not exe.exists():
-            raise FileNotFoundError
-    except Exception:
-        print("Playwright 브라우저 설치 중...", flush=True)
-        subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
-            check=True,
-        )
+    """Playwright Chromium 바이너리 보장 (없으면 설치, 있으면 즉시 종료)."""
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(result.stdout, flush=True)
+        print(result.stderr, flush=True)
+        raise RuntimeError(f"Playwright 브라우저 설치 실패:\n{result.stderr}")
 
 CATEGORIES = [
     {"id": "30100020", "url": "https://www.shinsegaetvshopping.com/category/30100020?trackSearchType=y_pc_category&new_odd=y"},
