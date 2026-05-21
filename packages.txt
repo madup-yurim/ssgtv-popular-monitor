@@ -21,3 +21,4 @@ libfontconfig1
 libexpat1
 fonts-liberation
 xdg-utils
+libasound2t64
