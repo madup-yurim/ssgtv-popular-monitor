@@ -18,20 +18,18 @@ SERVICE_ACCOUNT_PATH = Path(__file__).parent / "service_account.json"
 
 
 def _client() -> gspread.Client:
-    """st.secrets 또는 service_account.json 파일로 gspread 클라이언트 반환."""
-    # Streamlit Cloud: secrets 환경변수 경유
-    try:
-        import streamlit as st
-        if "gcp_service_account" in st.secrets:
-            return gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
-    except Exception:
-        pass
-    # 로컬: 파일
+    """환경변수 GCP_SA_JSON → service_account.json 파일 순으로 인증."""
+    # 1순위: 환경변수 (app.py가 st.secrets → JSON → 환경변수로 전달)
+    sa_json = os.environ.get("GCP_SA_JSON")
+    if sa_json:
+        info = json.loads(sa_json)
+        return gspread.service_account_from_dict(info)
+    # 2순위: 로컬 파일
     if SERVICE_ACCOUNT_PATH.exists():
         return gspread.service_account(filename=str(SERVICE_ACCOUNT_PATH))
     raise FileNotFoundError(
         f"서비스 계정 키를 찾을 수 없습니다.\n"
-        f"  - Streamlit Cloud: st.secrets['gcp_service_account'] 를 설정하거나\n"
+        f"  - 환경변수 GCP_SA_JSON 을 설정하거나\n"
         f"  - 로컬: {SERVICE_ACCOUNT_PATH} 파일을 배치하세요."
     )
 

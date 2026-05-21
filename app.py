@@ -1,3 +1,5 @@
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -6,6 +8,15 @@ import pandas as pd
 import streamlit as st
 
 HERE = Path(__file__).parent
+
+
+def _sa_env() -> dict:
+    """서비스 계정 JSON을 환경변수로 subprocess에 전달하기 위한 env dict."""
+    env = os.environ.copy()
+    # Streamlit Cloud: st.secrets → JSON 문자열로 직렬화
+    if "gcp_service_account" in st.secrets:
+        env["GCP_SA_JSON"] = json.dumps(dict(st.secrets["gcp_service_account"]))
+    return env
 
 st.set_page_config(
     page_title="신세계쇼핑 인기상품 모니터링",
@@ -46,6 +57,7 @@ if collect:
         [sys.executable, str(HERE / "sheets_writer.py")],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         cwd=str(HERE),
+        env=_sa_env(),
     )
     if sheets_result.returncode == 0:
         status.success("✅ 수집 완료! 시트도 업데이트됐습니다.")
