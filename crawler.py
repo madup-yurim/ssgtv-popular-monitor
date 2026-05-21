@@ -1,7 +1,27 @@
+import subprocess
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
 from playwright.sync_api import sync_playwright, Page
 
 from database import init_db, create_session, save_products
+
+
+def _ensure_browser() -> None:
+    """Playwright 브라우저 바이너리가 없으면 자동 설치 (Streamlit Cloud 대응)."""
+    try:
+        from playwright.sync_api import sync_playwright as _sp
+        with _sp() as _pw:
+            exe = Path(_pw.chromium.executable_path)
+        if not exe.exists():
+            raise FileNotFoundError
+    except Exception:
+        print("Playwright 브라우저 설치 중...", flush=True)
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=True,
+        )
 
 CATEGORIES = [
     {"id": "30100020", "url": "https://www.shinsegaetvshopping.com/category/30100020?trackSearchType=y_pc_category&new_odd=y"},
@@ -76,6 +96,7 @@ def crawl_category(page: Page, category: dict) -> tuple[str, list[dict]]:
 
 def crawl_all() -> int:
     """4개 카테고리 전체 수집 → DB 저장 → session_id 반환"""
+    _ensure_browser()
     init_db()
     collected_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     session_id = create_session(collected_at)
