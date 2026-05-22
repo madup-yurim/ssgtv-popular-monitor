@@ -31,7 +31,30 @@ def _save_to_sqlite_optional(collected_at: str, products: list[dict]) -> None:
         print(f"  SQLite 백업 스킵: {e}")
 
 
+def _diag_network() -> None:
+    """네트워크 진단: 신세계쇼핑 도메인에 HTTP HEAD 요청 보내본다."""
+    import urllib.request
+    test_url = "https://www.shinsegaetvshopping.com/"
+    print("=" * 50)
+    print("0단계: 네트워크 진단")
+    print("=" * 50)
+    try:
+        req = urllib.request.Request(
+            test_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"  HTTP 응답: {resp.status} {resp.reason}")
+            print(f"  서버: {resp.headers.get('Server', 'unknown')}")
+            print(f"  Content-Type: {resp.headers.get('Content-Type', 'unknown')}")
+    except Exception as e:
+        print(f"  HTTP 요청 실패: {type(e).__name__}: {e}")
+        print(f"  → 사이트가 이 IP를 차단했거나 네트워크 문제일 수 있습니다.")
+
+
 def main() -> dict:
+    _diag_network()
+    print()
     print("=" * 50)
     print("1단계: 크롤링")
     print("=" * 50)

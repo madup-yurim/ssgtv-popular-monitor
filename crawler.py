@@ -106,11 +106,17 @@ def crawl_category(page: Page, category: dict) -> tuple[str, list[dict]]:
     return category_name, all_products
 
 
+_REAL_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36"
+)
+
+
 def _crawl_category_worker(cat: dict) -> tuple[str, list[dict]]:
     """독립 playwright 인스턴스로 카테고리 수집 (스레드 안전)."""
     try:
         with sync_playwright() as pw:
-            # 메모리 절약을 위한 Chrome 옵션
             browser = pw.chromium.launch(
                 headless=True,
                 args=[
@@ -122,8 +128,17 @@ def _crawl_category_worker(cat: dict) -> tuple[str, list[dict]]:
                 ],
             )
             try:
-                page = browser.new_page()
-                page.set_viewport_size({"width": 1280, "height": 900})
+                context = browser.new_context(
+                    user_agent=_REAL_UA,
+                    locale="ko-KR",
+                    timezone_id="Asia/Seoul",
+                    viewport={"width": 1280, "height": 900},
+                    extra_http_headers={
+                        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+                        "Referer": "https://www.shinsegaetvshopping.com/",
+                    },
+                )
+                page = context.new_page()
                 return crawl_category(page, cat)
             finally:
                 browser.close()
