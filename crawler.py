@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -7,6 +8,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, Page
 
 KST = timezone(timedelta(hours=9))
+
+# 동시 실행 카테고리 수: 환경변수로 제어 가능 (기본 2, 로컬에서 빠르게 하려면 4)
+MAX_CONCURRENCY = int(os.environ.get("CRAWL_CONCURRENCY", "2"))
 
 
 def _ensure_browser() -> None:
@@ -103,17 +107,30 @@ def crawl_category(page: Page, category: dict) -> tuple[str, list[dict]]:
 
 def _crawl_category_worker(cat: dict) -> tuple[str, list[dict]]:
     """독립 playwright 인스턴스로 카테고리 수집 (스레드 안전)."""
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        try:
-            page = browser.new_page()
-            page.set_viewport_size({"width": 1280, "height": 900})
-            return crawl_category(page, cat)
-        except Exception as e:
-            print(f"  [{cat['id']}] 수집 실패: {e}")
-            return cat["id"], []
-        finally:
-            browser.close()
+    try:
+        with sync_playwright() as pw:
+            # 메모리 절약을 위한 Chrome 옵션
+            browser = pw.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-extensions",
+                    "--disable-background-timer-throttling",
+                ],
+            )
+            try:
+                page = browser.new_page()
+                page.set_viewport_size({"width": 1280, "height": 900})
+                return crawl_category(page, cat)
+            finally:
+                browser.close()
+    except Exception as e:
+        import traceback
+        print(f"  [{cat['id']}] 수집 실패: {type(e).__name__}: {e}", flush=True)
+        traceback.print_exc()
+        return cat["id"], []
 
 
 def crawl_all_to_memory() -> tuple[str, list[dict]]:
@@ -121,14 +138,17 @@ def crawl_all_to_memory() -> tuple[str, list[dict]]:
     _ensure_browser()
     collected_at = datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S")
 
+    workers = min(MAX_CONCURRENCY, len(CATEGORIES))
+    print(f"  병렬 워커 수: {workers}/{len(CATEGORIES)}", flush=True)
+
     all_products: list[dict] = []
-    with ThreadPoolExecutor(max_workers=len(CATEGORIES)) as executor:
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_crawl_category_worker, cat): cat for cat in CATEGORIES}
         for future in as_completed(futures):
             _, products = future.result()
             all_products.extend(products)
 
-    print(f"수집 완료 - collected_at={collected_at}, 총 {len(all_products)}개")
+    print(f"수집 완료 - collected_at={collected_at}, 총 {len(all_products)}개", flush=True)
     return collected_at, all_products
 
 

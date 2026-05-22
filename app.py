@@ -49,7 +49,10 @@ if collect:
     if result.returncode != 0:
         status.error("수집 실패")
         with st.expander("에러 상세 보기", expanded=True):
-            st.code(result.stderr[-2000:] if result.stderr else result.stdout[-2000:])
+            st.markdown("**stdout (크롤링 로그):**")
+            st.code(result.stdout[-2000:] if result.stdout else "(없음)")
+            st.markdown("**stderr (에러):**")
+            st.code(result.stderr[-2000:] if result.stderr else "(없음)")
         st.stop()
 
     status.success("✅ 수집 완료! 시트도 업데이트됐습니다.")
