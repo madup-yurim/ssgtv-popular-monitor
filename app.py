@@ -16,6 +16,8 @@ def _sa_env() -> dict:
     # Streamlit Cloud: st.secrets → JSON 문자열로 직렬화
     if "gcp_service_account" in st.secrets:
         env["GCP_SA_JSON"] = json.dumps(dict(st.secrets["gcp_service_account"]))
+        # Cloud 환경: 메모리 부족으로 인한 느린 페이지 로드 방지 → 순차 수집
+        env["CRAWL_CONCURRENCY"] = "1"
     return env
 
 st.set_page_config(

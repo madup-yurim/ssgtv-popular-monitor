@@ -62,9 +62,9 @@ _JS_EXTRACT = """() => {
 
 
 def _wait_for_products(page: Page) -> None:
-    page.wait_for_selector("div.card.gtm_list_item", timeout=30000)
+    page.wait_for_selector("div.card.gtm_list_item", timeout=45000)
     try:
-        page.wait_for_load_state("networkidle", timeout=20000)
+        page.wait_for_load_state("networkidle", timeout=15000)
     except Exception:
         pass  # networkidle 타임아웃은 무시 (카드가 이미 로드됐으면 진행)
 
@@ -79,7 +79,8 @@ def _get_category_name(page: Page, category_id: str) -> str:
 
 def crawl_category(page: Page, category: dict) -> tuple[str, list[dict]]:
     """한 카테고리의 1~2페이지 상품을 크롤링. (category_name, products) 반환"""
-    page.goto(category["url"], wait_until="domcontentloaded", timeout=30000)
+    # wait_until="commit": 네비게이션 시작만 확인 (DOM 로드 대기는 wait_for_selector가 담당)
+    page.goto(category["url"], wait_until="commit", timeout=60000)
     _wait_for_products(page)
 
     category_name = _get_category_name(page, category["id"])
