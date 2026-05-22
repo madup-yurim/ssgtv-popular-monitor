@@ -35,38 +35,28 @@ with col_btn:
     collect = st.button("📥 수집하기", type="primary", use_container_width=True)
 
 if collect:
-    # 1단계: 크롤링
+    # 통합 수집 (크롤링 → 시트 직접 쓰기) - subprocess 1회
     status = col_status.empty()
-    status.info("🕷️ 크롤링 중... (1~2분 소요)")
+    status.info("🕷️ 수집 중... (크롤링 + 시트 업데이트)")
 
     result = subprocess.run(
-        [sys.executable, str(HERE / "crawler.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        cwd=str(HERE),
-    )
-
-    if result.returncode != 0:
-        status.error("크롤링 실패")
-        with st.expander("에러 상세 보기", expanded=True):
-            st.code(result.stderr[-1500:] if result.stderr else result.stdout[-1500:])
-        st.stop()
-
-    # 2단계: 시트 자동 업데이트
-    status.info("📊 시트 업데이트 중...")
-    sheets_result = subprocess.run(
-        [sys.executable, str(HERE / "sheets_writer.py")],
+        [sys.executable, str(HERE / "collect.py")],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         cwd=str(HERE),
         env=_sa_env(),
     )
-    if sheets_result.returncode == 0:
-        status.success("✅ 수집 완료! 시트도 업데이트됐습니다.")
-    else:
-        status.warning("⚠️ 수집은 완료됐지만 시트 업데이트 실패")
-        with st.expander("시트 업데이트 오류", expanded=False):
-            st.code(sheets_result.stderr[-800:] if sheets_result.stderr else sheets_result.stdout[-800:])
 
-    # 3단계: Sheets 캐시 초기화 후 재로딩
+    if result.returncode != 0:
+        status.error("수집 실패")
+        with st.expander("에러 상세 보기", expanded=True):
+            st.code(result.stderr[-2000:] if result.stderr else result.stdout[-2000:])
+        st.stop()
+
+    status.success("✅ 수집 완료! 시트도 업데이트됐습니다.")
+    with st.expander("실행 로그", expanded=False):
+        st.code(result.stdout[-2000:])
+
+    # Sheets 캐시 무효화
     if IS_CLOUD:
         if "refresh_count" not in st.session_state:
             st.session_state.refresh_count = 0

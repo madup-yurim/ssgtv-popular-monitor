@@ -11,8 +11,6 @@ from pathlib import Path
 
 import gspread
 
-from database import get_products, get_sessions
-
 SPREADSHEET_ID = "1NR55kj6kwK1vSG3J-3T_IROYibAgv5WUqw46adh3sKU"
 SERVICE_ACCOUNT_PATH = Path(__file__).parent / "service_account.json"
 
@@ -54,27 +52,15 @@ def _ensure_header(ws: gspread.Worksheet) -> list[list]:
     return all_values
 
 
-def write_to_sheets(session_id: int | None = None) -> dict:
+def write_products_to_sheets(collected_at: str, products: list[dict]) -> dict:
     """
-    session_id: None이면 최신 세션 사용
+    products 리스트를 직접 받아 시트에 append.
     이미 시트에 해당 수집일시 데이터가 있으면 스킵한다 (중복 방지).
     반환: {"sheet_url": str, "rows_written": int, "skipped": bool}
     """
-    # 최신 세션 자동 선택
-    if session_id is None:
-        sessions = get_sessions()
-        real = [s for s in sessions if len(get_products(s["id"])) >= 50]
-        if not real:
-            raise ValueError("수집된 데이터가 없습니다. 먼저 크롤러를 실행하세요.")
-        session_id = real[0]["id"]
-
-    products = get_products(session_id)
     if not products:
-        raise ValueError(f"session_id={session_id} 에 상품 데이터가 없습니다.")
+        raise ValueError("수집된 상품 데이터가 없습니다.")
 
-    collected_at = next(
-        s["collected_at"] for s in get_sessions() if s["id"] == session_id
-    )
     collected_str = collected_at.replace("T", " ")
 
     gc = _client()
@@ -129,6 +115,3 @@ def write_to_sheets(session_id: int | None = None) -> dict:
     return {"sheet_url": sheet_url, "rows_written": len(rows), "skipped": False}
 
 
-if __name__ == "__main__":
-    result = write_to_sheets()
-    print(json.dumps(result, ensure_ascii=False, indent=2))

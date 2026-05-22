@@ -6,8 +6,6 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright, Page
 
-from database import init_db, create_session, save_products
-
 KST = timezone(timedelta(hours=9))
 
 
@@ -118,12 +116,10 @@ def _crawl_category_worker(cat: dict) -> tuple[str, list[dict]]:
             browser.close()
 
 
-def crawl_all() -> int:
-    """4개 카테고리 병렬 수집 → DB 저장 → session_id 반환"""
+def crawl_all_to_memory() -> tuple[str, list[dict]]:
+    """4개 카테고리 병렬 수집 → (collected_at, products) 반환. DB 저장 없음."""
     _ensure_browser()
-    init_db()
     collected_at = datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S")
-    session_id = create_session(collected_at)
 
     all_products: list[dict] = []
     with ThreadPoolExecutor(max_workers=len(CATEGORIES)) as executor:
@@ -132,8 +128,18 @@ def crawl_all() -> int:
             _, products = future.result()
             all_products.extend(products)
 
+    print(f"수집 완료 - collected_at={collected_at}, 총 {len(all_products)}개")
+    return collected_at, all_products
+
+
+def crawl_all() -> int:
+    """[로컬용] 4개 카테고리 병렬 수집 → SQLite 저장 → session_id 반환"""
+    from database import init_db, create_session, save_products
+    init_db()
+    collected_at, all_products = crawl_all_to_memory()
+    session_id = create_session(collected_at)
     save_products(session_id, all_products)
-    print(f"수집 완료 - session_id={session_id}, collected_at={collected_at}, 총 {len(all_products)}개")
+    print(f"SQLite 저장 완료 - session_id={session_id}")
     return session_id
 
 
